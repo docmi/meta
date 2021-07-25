@@ -2024,3 +2024,806 @@ metabin <- function(event.e, n.e, event.c, n.c, studlab,
 
   res
 }
+
+metabin2 <- function (event.e, n.e, event.c, n.c, studlab, odd, odd_std, data = NULL, 
+                      subset = NULL, exclude = NULL, method = ifelse(tau.common, 
+                                                                     "Inverse", gs("method")), sm = ifelse(!is.na(charmatch(tolower(method), 
+                                                                                                                            c("peto", "glmm", "ssw"), nomatch = NA)), "OR", gs("smbin")), 
+                      incr = gs("incr"), allincr = gs("allincr"), addincr = gs("addincr"), 
+                      allstudies = gs("allstudies"), MH.exact = gs("MH.exact"), 
+                      RR.Cochrane = gs("RR.Cochrane"), Q.Cochrane = gs("Q.Cochrane") & 
+                        method == "MH" & method.tau == "DL", model.glmm = "UM.FS", 
+                      level = gs("level"), level.comb = gs("level.comb"), comb.fixed = gs("comb.fixed"), 
+                      comb.random = gs("comb.random"), overall = comb.fixed | 
+                        comb.random, overall.hetstat = comb.fixed | comb.random, 
+                      hakn = gs("hakn"), adhoc.hakn = gs("adhoc.hakn"), method.tau = ifelse(!is.na(charmatch(tolower(method), 
+                                                                                                             "glmm", nomatch = NA)), "ML", gs("method.tau")), method.tau.ci = gs("method.tau.ci"), 
+                      tau.preset = NULL, TE.tau = NULL, tau.common = gs("tau.common"), 
+                      prediction = gs("prediction"), level.predict = gs("level.predict"), 
+                      method.bias = ifelse(sm == "OR", "Harbord", ifelse(sm == 
+                                                                           "DOR", "Deeks", gs("method.bias"))), backtransf = gs("backtransf"), 
+                      pscale = 1, text.fixed = gs("text.fixed"), text.random = gs("text.random"), 
+                      text.predict = gs("text.predict"), text.w.fixed = gs("text.w.fixed"), 
+                      text.w.random = gs("text.w.random"), title = gs("title"), 
+                      complab = gs("complab"), outclab = "", label.e = gs("label.e"), 
+                      label.c = gs("label.c"), label.left = gs("label.left"), 
+                      label.right = gs("label.right"), byvar, bylab, print.byvar = gs("print.byvar"), 
+                      byseparator = gs("byseparator"), print.CMH = gs("print.CMH"), 
+                      keepdata = gs("keepdata"), warn = gs("warn"), control = NULL, 
+                      ...) 
+{
+  chknull(sm)
+  sm.metafor <- c("PHI", "YUQ", "YUY", "RTET", "PBIT", "OR2D", 
+                  "OR2DN", "OR2DL", "MPRD", "MPRR", "MPOR", "MPORC", "MPPETO")
+  sm <- setchar(sm, .settings$sm4bin)
+  metafor <- sm %in% sm.metafor
+  chklevel(level)
+  chklevel(level.comb)
+  chklogical(comb.fixed)
+  chklogical(comb.random)
+  chklogical(overall)
+  chklogical(overall.hetstat)
+  chklogical(hakn)
+  adhoc.hakn <- setchar(adhoc.hakn, .settings$adhoc4hakn)
+  method.tau <- setchar(method.tau, c(.settings$meth4tau, 
+                                      "KD"))
+  if (is.null(method.tau.ci)) 
+    method.tau.ci <- if (method.tau == "DL") 
+      "J"
+  else "QP"
+  method.tau.ci <- setchar(method.tau.ci, .settings$meth4tau.ci)
+  chklogical(tau.common)
+  chklogical(prediction)
+  chklevel(level.predict)
+  method.bias <- setmethodbias(method.bias)
+  chklogical(backtransf)
+  chknumeric(pscale, length = 1)
+  if (!is.null(text.fixed)) 
+    chkchar(text.fixed, length = 1)
+  if (!is.null(text.random)) 
+    chkchar(text.random, length = 1)
+  if (!is.null(text.predict)) 
+    chkchar(text.predict, length = 1)
+  if (!is.null(text.w.fixed)) 
+    chkchar(text.w.fixed, length = 1)
+  if (!is.null(text.w.random)) 
+    chkchar(text.w.random, length = 1)
+  chklogical(keepdata)
+  fun <- "metabin"
+  chklogical(warn)
+  if (sm != "RD" & pscale != 1) {
+    if (warn) 
+      warning("Argument 'pscale' only considered for risk differences.")
+    pscale <- 1
+  }
+  method <- setchar(method, .settings$meth4bin)
+  if (metafor) 
+    method <- "Inverse"
+  is.glmm <- method == "GLMM"
+  chklogical(allincr)
+  chklogical(addincr)
+  chklogical(allstudies)
+  chklogical(MH.exact)
+  chklogical(RR.Cochrane)
+  chklogical(Q.Cochrane)
+  if (Q.Cochrane & (method != "MH" | method.tau != "DL")) {
+    warning("Argument 'Q.Cochrane' only considered for ", 
+            "Mantel-Haenszel method in combination with ", "DerSimonian-Laird estimator.")
+    Q.Cochrane <- FALSE
+  }
+  model.glmm <- setchar(model.glmm, c("UM.FS", "UM.RS", "CM.EL", 
+                                      "CM.AL"))
+  if (is.glmm & model.glmm == "CM.EL") 
+    is.installed.package("BiasedUrn", fun, "model.glmm", 
+                         " = \"CM.EL\"")
+  chklogical(print.CMH)
+  if (sm == "ASD") {
+    method <- "Inverse"
+    if (!missing(Q.Cochrane) && Q.Cochrane) 
+      warning("Argument 'Q.Cochrane' only considered for ", 
+              "Mantel-Haenszel method in combination with ", 
+              "DerSimonian-Laird estimator.")
+    Q.Cochrane <- FALSE
+  }
+  if (sm != "OR") {
+    if (method == "Peto") 
+      stop("Peto's method only possible with argument 'sm = \"OR\"'")
+    else if (method == "SSW") 
+      stop("Sample size weighting only available with argument 'sm = \"OR\"'")
+    else if (is.glmm) 
+      stop("Generalised linear mixed models only possible with ", 
+           "argument 'sm = \"OR\"'.")
+  }
+  if (is.glmm & method.tau != "ML") 
+    stop("Generalised linear mixed models only possible with ", 
+         "argument 'method.tau = \"ML\"'.")
+  args <- list(...)
+  if (length(args) > 0 && is.list(args[[1]])) 
+    args <- args[[1]]
+  additional.arguments <- names(args)
+  if (length(additional.arguments) > 0) {
+    if ("RR.cochrane" %in% additional.arguments) 
+      if (!missing(RR.Cochrane)) 
+        warning("Argument 'RR.cochrane' ignored as both arguments ", 
+                "'RR.Cochrane' and 'RR.cochrane' are provided.")
+    else {
+      RR.Cochrane <- args[["RR.cochrane"]]
+      chklogical(RR.Cochrane)
+    }
+  }
+  nulldata <- is.null(data)
+  if (nulldata) 
+    data <- sys.frame(sys.parent())
+  mf <- match.call()
+  event.e <- eval(mf[[match("event.e", names(mf))]], data, 
+                  enclos = sys.frame(sys.parent()))
+  chknull(event.e)
+  k.All <- length(event.e)
+  n.e <- eval(mf[[match("n.e", names(mf))]], data, enclos = sys.frame(sys.parent()))
+  chknull(n.e)
+  event.c <- eval(mf[[match("event.c", names(mf))]], data, 
+                  enclos = sys.frame(sys.parent()))
+  chknull(event.c)
+  n.c <- eval(mf[[match("n.c", names(mf))]], data, enclos = sys.frame(sys.parent()))
+  odd <- eval(mf[[match("odd", names(mf))]], data, enclos = sys.frame(sys.parent()))
+  odd_std <- eval(mf[[match("odd_std", names(mf))]], data, enclos = sys.frame(sys.parent()))
+  chknull(n.c)
+  if (!missing(incr)) 
+    incr <- eval(mf[[match("incr", names(mf))]], data, enclos = sys.frame(sys.parent()))
+  if (is.numeric(incr)) 
+    chknumeric(incr, min = 0)
+  else incr <- setchar(incr, "TACC", "should be numeric or the character string \"TACC\"")
+  if (metafor) {
+    if (length(incr) > 1) {
+      if (!missing(incr)) 
+        warning("Increment of 0.5 used for effect measure '", 
+                sm, "'")
+      incr <- 0.5
+    }
+    else if (incr == "TACC") {
+      if (!missing(incr)) 
+        warning("Increment of 0.5 used for effect measure '", 
+                sm, "'")
+      incr <- 0.5
+    }
+  }
+  studlab <- eval(mf[[match("studlab", names(mf))]], data, 
+                  enclos = sys.frame(sys.parent()))
+  studlab <- setstudlab(studlab, k.All)
+  byvar <- eval(mf[[match("byvar", names(mf))]], data, enclos = sys.frame(sys.parent()))
+  by <- !is.null(byvar)
+  subset <- eval(mf[[match("subset", names(mf))]], data, enclos = sys.frame(sys.parent()))
+  missing.subset <- is.null(subset)
+  exclude <- eval(mf[[match("exclude", names(mf))]], data, 
+                  enclos = sys.frame(sys.parent()))
+  missing.exclude <- is.null(exclude)
+  chklength(n.e, k.All, fun)
+  chklength(event.c, k.All, fun)
+  chklength(n.c, k.All, fun)
+  chklength(studlab, k.All, fun)
+  if (length(incr) > 1) 
+    chklength(incr, k.All, fun)
+  if (by) 
+    chklength(byvar, k.All, fun)
+  if (is.glmm) {
+    if (!is.null(TE.tau)) {
+      if (warn) 
+        warning("Argument 'TE.tau' not considered for GLMM.")
+      TE.tau <- NULL
+    }
+    if (!is.null(tau.preset)) {
+      if (warn) 
+        warning("Argument 'tau.preset' not considered for GLMM.")
+      tau.preset <- NULL
+    }
+  }
+  if (!by & tau.common) {
+    if (warn) 
+      warning("Value for argument 'tau.common' set to FALSE as argument 'byvar' is missing.")
+    tau.common <- FALSE
+  }
+  if (by & !tau.common & !is.null(tau.preset)) {
+    if (warn) 
+      warning("Argument 'tau.common' set to TRUE as argument tau.preset is not NULL.")
+    tau.common <- TRUE
+  }
+  if (!missing.subset) 
+    if ((is.logical(subset) & (sum(subset) > k.All)) || 
+        (length(subset) > k.All)) 
+      stop("Length of subset is larger than number of studies.")
+  if (!missing.exclude) {
+    if ((is.logical(exclude) & (sum(exclude) > k.All)) || 
+        (length(exclude) > k.All)) 
+      stop("Length of argument 'exclude' is larger than number of studies.")
+    exclude2 <- rep(FALSE, k.All)
+    exclude2[exclude] <- TRUE
+    exclude <- exclude2
+  }
+  else exclude <- rep(FALSE, k.All)
+  if (keepdata) {
+    if (nulldata) 
+      data <- data.frame(.event.e = event.e)
+    else data$.event.e <- event.e
+    data$.n.e <- n.e
+    data$.event.c <- event.c
+    data$.n.c <- n.c
+    data$.studlab <- studlab
+    data$.odd <- odd
+    data$.odd_std <- odd_std
+    data$.incr <- incr
+    if (by) 
+      data$.byvar <- byvar
+    if (!missing.subset) {
+      if (length(subset) == dim(data)[1]) 
+        data$.subset <- subset
+      else {
+        data$.subset <- FALSE
+        data$.subset[subset] <- TRUE
+      }
+    }
+    if (!missing.exclude) 
+      data$.exclude <- exclude
+  }
+  if (!missing.subset) {
+    event.e <- event.e[subset]
+    n.e <- n.e[subset]
+    event.c <- event.c[subset]
+    n.c <- n.c[subset]
+    studlab <- studlab[subset]
+    odd <- odd[subset]
+    odd_std <- odd_std[subset]
+    exclude <- exclude[subset]
+    if (length(incr) > 1) 
+      incr <- incr[subset]
+    if (by) 
+      byvar <- byvar[subset]
+  }
+  k.all <- length(event.e)
+  if (k.all == 0) 
+    stop("No studies to combine in meta-analysis.")
+  if (k.all == 1) {
+    comb.fixed <- FALSE
+    comb.random <- FALSE
+    prediction <- FALSE
+    overall <- FALSE
+    overall.hetstat <- FALSE
+  }
+  chknumeric(event.e)
+  chknumeric(n.e)
+  chknumeric(event.c)
+  chknumeric(n.c)
+  event.e <- int2num(event.e)
+  n.e <- int2num(n.e)
+  event.c <- int2num(event.c)
+  n.c <- int2num(n.c)
+  if (by) {
+    chkmiss(byvar)
+    byvar.name <- byvarname(mf[[match("byvar", names(mf))]])
+    bylab <- if (!missing(bylab) && !is.null(bylab)) 
+      bylab
+    else byvar.name
+  }
+  if (sm == "RD" | sm == "ASD" | metafor) 
+    incl <- rep(1, k.all)
+  else {
+    allevents <- event.c == n.c & event.e == n.e
+    if (allstudies) 
+      incl <- rep(1, k.all)
+    else {
+      if (sm %in% c("OR", "DOR")) 
+        incl <- ifelse((event.c == 0 & event.e == 0) | 
+                         (event.c == n.c & event.e == n.e), NA, 1)
+      if (sm == "RR") 
+        incl <- ifelse((event.c == 0 & event.e == 0), 
+                       NA, 1)
+    }
+  }
+  sel1 <- event.e > n.e
+  sel2 <- event.c > n.c
+  if ((any(sel1, na.rm = TRUE)) & warn) 
+    warning("Studies with event.e > n.e get no weight in meta-analysis.")
+  if ((any(sel2, na.rm = TRUE)) & warn) 
+    warning("Studies with event.c > n.c get no weight in meta-analysis.")
+  incl[sel1 | sel2] <- NA
+  sel3 <- n.e <= 0 | n.c <= 0
+  if ((any(sel3, na.rm = TRUE)) & warn) 
+    warning("Studies with non-positive values for n.e and / or n.c ", 
+            "get no weight in meta-analysis.")
+  incl[sel3] <- NA
+  sel4 <- event.e < 0 | event.c < 0
+  if ((any(sel4, na.rm = TRUE)) & warn) 
+    warning("Studies with negative values for event.e and / or event.c ", 
+            "get no weight in meta-analysis.")
+  incl[sel4] <- NA
+  sel <- switch(sm, OR = ((n.e - event.e) == 0 | event.e == 
+                            0 | (n.c - event.c) == 0 | event.c == 0), RD = ((n.e - 
+                                                                               event.e) == 0 | event.e == 0 | (n.c - event.c) == 0 | 
+                                                                              event.c == 0), RR = ((n.e - event.e) == 0 | event.e == 
+                                                                                                     0 | (n.c - event.c) == 0 | event.c == 0), ASD = rep(FALSE, 
+                                                                                                                                                         length(event.e)), DOR = ((n.e - event.e) == 0 | event.e == 
+                                                                                                                                                                                    0 | (n.c - event.c) == 0 | event.c == 0))
+  sel[is.na(incl)] <- FALSE
+  sparse <- any(sel, na.rm = TRUE)
+  doublezeros <- FALSE
+  if (sparse & sm %in% c("RR", "OR") & !(method %in% c("Peto", 
+                                                       "GLMM"))) {
+    sel.doublezeros <- switch(sm, OR = (event.e == 0 & event.c == 
+                                          0) | (event.c == n.c & event.e == n.e), RR = (event.c == 
+                                                                                          0 & event.e == 0))
+    if (any(sel.doublezeros, na.rm = TRUE)) 
+      doublezeros <- TRUE
+  }
+  if (sm == "ASD" | method %in% c("Peto", "GLMM")) {
+    if ((!missing(incr) & any(incr != 0)) | (!missing(allincr) & 
+                                             allincr) | (!missing(addincr) & addincr) | (!missing(allstudies) & 
+                                                                                         allstudies)) 
+      if (sm == "ASD") {
+        if ((sparse | addincr) & warn) {
+          warning("Note, no continuity correction considered ", 
+                  "for arcsine difference (sm = \"ASD\").")
+        }
+      }
+    else if (method == "Peto") {
+      if ((sparse | addincr) & warn) 
+        warning("Note, no continuity correction considered ", 
+                "for method = \"Peto\".")
+    }
+    else if (is.glmm) {
+      if ((sparse | addincr) & warn) 
+        warning("Note, for method = \"GLMM\", continuity correction ", 
+                "only used to calculate individual study results.")
+    }
+  }
+  if (addincr) {
+    if (is.numeric(incr)) {
+      incr.e <- if (length(incr) == 1) 
+        rep(incr, k.all)
+      else incr
+      incr.c <- if (length(incr) == 1) 
+        rep(incr, k.all)
+      else incr
+    }
+    else {
+      if (all(incr == "TACC")) {
+        incr.e <- n.e/(n.e + n.c)
+        incr.c <- n.c/(n.e + n.c)
+      }
+    }
+  }
+  else {
+    if (sparse) {
+      if (allincr) {
+        if (is.numeric(incr)) {
+          incr.e <- if (length(incr) == 1) 
+            rep(incr, k.all)
+          else incr
+          incr.c <- if (length(incr) == 1) 
+            rep(incr, k.all)
+          else incr
+        }
+        else {
+          if (all(incr == "TACC")) {
+            incr.e <- n.e/(n.e + n.c)
+            incr.c <- n.c/(n.e + n.c)
+          }
+        }
+      }
+      else {
+        if (is.numeric(incr)) {
+          incr.e <- incr * sel
+          incr.c <- incr * sel
+        }
+        else {
+          if (all(incr == "TACC")) {
+            incr.e <- n.e/(n.e + n.c) * sel
+            incr.c <- n.c/(n.e + n.c) * sel
+          }
+        }
+      }
+    }
+    else {
+      incr.e <- rep(0, k.all)
+      incr.c <- rep(0, k.all)
+    }
+  }
+  if (method == "Peto") {
+    incr <- 0
+    incr.e <- rep(0, k.all)
+    incr.c <- rep(0, k.all)
+  }
+  n11 <- event.e * incl
+  n21 <- event.c * incl
+  n1. <- n.e * incl
+  n2. <- n.c * incl
+  n.. <- n1. + n2.
+  n12 <- n1. - n11
+  n22 <- n2. - n21
+  n.1 <- n11 + n21
+  n.2 <- n12 + n22
+  Q.CMH <- (sum((n11 - n1. * n.1/n..)[!exclude], na.rm = TRUE)^2/sum((n1. * 
+                                                                        n2. * n.1 * n.2/n..^3)[!exclude], na.rm = TRUE))
+  p.e <- (n11 + incr.e)/(n1. + 2 * incr.e)
+  p.c <- (n21 + incr.c)/(n2. + 2 * incr.c)
+  if (sm %in% c("OR", "DOR")) {
+    if (method %in% c("MH", "Inverse", "GLMM", "SSW")) {
+      TE <- log(((n11 + incr.e) * (n22 + incr.c))/((n12 + 
+                                                      incr.e) * (n21 + incr.c)))
+      seTE <- sqrt((1/(n11 + incr.e) + 1/(n12 + incr.e) + 
+                      1/(n21 + incr.c) + 1/(n22 + incr.c)))
+      TE = ifelse(is.na(odd), TE, odd)
+      seTE = ifelse(is.na(odd_std), seTE, odd_std)
+    }
+    else if (method == "Peto") {
+      O <- n11
+      E <- n1. * n.1/n..
+      V <- n1. * n2. * n.1 * n.2/((n.. - 1) * n..^2)
+      TE <- (O - E)/V
+      seTE <- sqrt(1/V)
+    }
+  }
+  else if (sm == "RR") {
+    if (!RR.Cochrane) {
+      TE <- log(((n11 + incr.e)/(n1. + incr.e))/((n21 + 
+                                                    incr.c)/(n2. + incr.c)))
+      seTE <- sqrt((1/(n11 + incr.e * (!allevents)) - 
+                      1/(n1. + incr.e) + 1/(n21 + incr.c * (!allevents)) - 
+                      1/(n2. + incr.c)))
+    }
+    else {
+      TE <- log(((n11 + incr.e)/(n1. + 2 * incr.e))/((n21 + 
+                                                        incr.c)/(n2. + 2 * incr.c)))
+      seTE <- sqrt((1/(n11 + incr.e) - 1/(n1. + 2 * incr.e) + 
+                      1/(n21 + incr.c) - 1/(n2. + 2 * incr.c)))
+    }
+  }
+  else if (sm == "RD") {
+    TE <- n11/n1. - n21/n2.
+    seTE <- sqrt((n11 + incr.e) * (n12 + incr.e)/(n1. + 
+                                                    2 * incr.e)^3 + (n21 + incr.c) * (n22 + incr.c)/(n2. + 
+                                                                                                       2 * incr.c)^3)
+  }
+  else if (sm == "ASD") {
+    TE <- asin(sqrt(n11/n1.)) - asin(sqrt(n21/n2.))
+    seTE <- sqrt(0.25 * (1/n1. + 1/n2.))
+  }
+  else if (metafor) {
+    if (addincr) 
+      to <- "all"
+    else if (allincr) 
+      to <- "if0all"
+    else to <- "only0"
+    tmp <- escalc(measure = sm, ai = n11, bi = n12, ci = n21, 
+                  di = n22, add = incr, to = to, drop00 = !allstudies)
+    TE <- tmp$yi
+    seTE <- sqrt(tmp$vi)
+  }
+  k <- sum(!is.na(event.e[!exclude]) & !is.na(event.c[!exclude]) & 
+             !is.na(n.e[!exclude]) & !is.na(n.c[!exclude]))
+  if (k == 1 & hakn) 
+    hakn <- FALSE
+  if (all(incr.e == 0) & all(incr.c == 0) & method == "MH" & 
+      MH.exact == FALSE) 
+    MH.exact <- TRUE
+  if (method == "MH") {
+    incr.e <- incr.e * (!MH.exact)
+    incr.c <- incr.c * (!MH.exact)
+    if (sm %in% c("OR", "DOR")) {
+      A <- (n11 + incr.e) * (n22 + incr.c)/(n.. + 2 * 
+                                              incr.e + 2 * incr.c)
+      B <- (n11 + incr.e + n22 + incr.c)/(n.. + 2 * incr.e + 
+                                            2 * incr.c)
+      C <- (n12 + incr.e) * (n21 + incr.c)/(n.. + 2 * 
+                                              incr.e + 2 * incr.c)
+      D <- (n12 + incr.e + n21 + incr.c)/(n.. + 2 * incr.e + 
+                                            2 * incr.c)
+      A[exclude] <- B[exclude] <- C[exclude] <- D[exclude] <- 0
+      w.fixed <- C
+      TE.fixed <- log(sum(A, na.rm = TRUE)/sum(C, na.rm = TRUE))
+      seTE.fixed <- sqrt((1/(2 * sum(A, na.rm = TRUE)^2) * 
+                            (sum(A * B, na.rm = TRUE) + exp(TE.fixed) * 
+                               (sum(B * C, na.rm = TRUE) + sum(A * D, na.rm = TRUE)) + 
+                               exp(TE.fixed)^2 * sum(C * D, na.rm = TRUE))))
+    }
+    else if (sm == "RR") {
+      D <- ((n1. + 2 * incr.e) * (n2. + 2 * incr.c) * 
+              (n.1 + incr.e + incr.c) - (n11 + incr.e) * (n21 + 
+                                                            incr.c) * (n.. + 2 * incr.e + 2 * incr.c))/(n.. + 
+                                                                                                          2 * incr.e + 2 * incr.c)^2
+      R <- (n11 + incr.e) * (n2. + 2 * incr.c)/(n.. + 
+                                                  2 * incr.e + 2 * incr.c)
+      S <- (n21 + incr.c) * (n1. + 2 * incr.e)/(n.. + 
+                                                  2 * incr.e + 2 * incr.c)
+      D[exclude] <- R[exclude] <- S[exclude] <- 0
+      w.fixed <- S
+      TE.fixed <- log(sum(R, na.rm = TRUE)/sum(S, na.rm = TRUE))
+      seTE.fixed <- sqrt(sum(D, na.rm = TRUE)/(sum(R, 
+                                                   na.rm = TRUE) * sum(S, na.rm = TRUE)))
+    }
+    else if (sm == "RD") {
+      R <- ((n11 + incr.e) * (n12 + incr.e) * (n2. + 2 * 
+                                                 incr.c)^3 + (n21 + incr.c) * (n22 + incr.c) * 
+              (n1. + 2 * incr.e)^3)/((n1. + 2 * incr.e) * 
+                                       (n2. + 2 * incr.c) * (n.. + 2 * incr.e + 2 * 
+                                                               incr.c)^2)
+      S <- (n1. + 2 * incr.e) * (n2. + 2 * incr.c)/(n.. + 
+                                                      2 * incr.e + 2 * incr.c)
+      R[exclude] <- S[exclude] <- 0
+      w.fixed <- S
+      TE.fixed <- weighted.mean(TE, w.fixed, na.rm = TRUE)
+      seTE.fixed <- sqrt(sum(R, na.rm = TRUE)/sum(S, na.rm = TRUE)^2)
+    }
+    w.fixed[is.na(w.fixed)] <- 0
+  }
+  else if (method == "Peto") {
+    w.fixed <- 1/seTE^2
+    w.fixed[exclude] <- 0
+    TE.fixed <- weighted.mean(TE, w.fixed, na.rm = TRUE)
+    seTE.fixed <- sqrt(1/sum(w.fixed, na.rm = TRUE))
+    w.fixed[is.na(w.fixed)] <- 0
+  }
+  else if (is.glmm) {
+    zero.all <- (sum(event.e[!exclude], na.rm = TRUE) == 
+                   0 & sum(event.c[!exclude], na.rm = TRUE) == 0) | 
+      (!any(event.e[!exclude] != n.e[!exclude]) | !any(event.c[!exclude] != 
+                                                         n.c[!exclude]))
+    if (!zero.all) 
+      glmm.fixed <- rma.glmm(ai = event.e[!exclude], n1i = n.e[!exclude], 
+                             ci = event.c[!exclude], n2i = n.c[!exclude], 
+                             method = "FE", test = ifelse(hakn, "t", "z"), 
+                             level = 100 * level.comb, measure = "OR", model = model.glmm, 
+                             control = control, ...)
+    else glmm.fixed <- list(b = NA, se = NA, QE.Wld = NA, 
+                            QE.df = NA, QE.LRT = NA, tau2 = NA, se.tau2 = NA)
+    TE.fixed <- as.numeric(glmm.fixed$b)
+    seTE.fixed <- as.numeric(glmm.fixed$se)
+    w.fixed <- rep(NA, length(event.e))
+  }
+  else if (method == "SSW") {
+    w.fixed <- n.e * n.c/(n.e + n.c)
+    w.fixed[exclude] <- 0
+    TE.fixed <- weighted.mean(TE, w.fixed, na.rm = TRUE)
+    seTE.fixed <- sqrt(sum(w.fixed^2 * seTE^2, na.rm = TRUE)/sum(w.fixed, 
+                                                                 na.rm = TRUE)^2)
+    w.fixed[is.na(w.fixed)] <- 0
+  }
+  m <- metagen(TE, seTE, studlab, exclude = if (missing.exclude) 
+    NULL
+    else exclude, sm = sm, level = level, level.comb = level.comb, 
+    comb.fixed = comb.fixed, comb.random = comb.random, 
+    overall = overall, overall.hetstat = overall.hetstat, 
+    hakn = hakn, adhoc.hakn = adhoc.hakn, method.tau = method.tau, 
+    method.tau.ci = method.tau.ci, tau.preset = tau.preset, 
+    TE.tau = if (Q.Cochrane) 
+      TE.fixed
+    else TE.tau, tau.common = FALSE, prediction = prediction, 
+    level.predict = level.predict, method.bias = method.bias, 
+    backtransf = backtransf, text.fixed = text.fixed, text.random = text.random, 
+    text.predict = text.predict, text.w.fixed = text.w.fixed, 
+    text.w.random = text.w.random, title = title, complab = complab, 
+    outclab = outclab, label.e = label.e, label.c = label.c, 
+    label.left = label.left, label.right = label.right, 
+    keepdata = FALSE, warn = warn, control = control)
+  if (method == "SSW") {
+    w.random <- n.e * n.c/(n.e + n.c)
+    w.random[exclude] <- 0
+    TE.random <- weighted.mean(TE, w.random, na.rm = TRUE)
+    seTE.random <- sqrt(sum(w.random^2 * (seTE^2 + m$tau^2), 
+                            na.rm = TRUE)/sum(w.random, na.rm = TRUE)^2)
+    w.random[is.na(w.random)] <- 0
+  }
+  if (by & tau.common & !is.glmm) {
+    hcc <- hetcalc(TE, seTE, method.tau, "", if (Q.Cochrane & 
+                                                 method == "MH") 
+      TE.fixed
+      else TE.tau, level.comb, byvar, control)
+  }
+  res <- list(event.e = event.e, n.e = n.e, event.c = event.c, 
+              n.c = n.c, method = method, incr = if (length(unique(incr)) == 
+                                                     1) unique(incr) else incr, sparse = sparse, allincr = allincr, 
+              addincr = addincr, allstudies = allstudies, doublezeros = doublezeros, 
+              MH.exact = MH.exact, RR.Cochrane = RR.Cochrane, Q.Cochrane = Q.Cochrane, 
+              Q.CMH = Q.CMH, df.Q.CMH = 1, pval.Q.CMH = pvalQ(Q.CMH, 
+                                                              1), print.CMH = print.CMH, incr.e = incr.e, incr.c = incr.c, 
+              k.MH = if (method == "MH") sum(w.fixed > 0) else NA, 
+              k.all = k.all)
+  m$n.e <- NULL
+  m$n.c <- NULL
+  m$method <- NULL
+  res <- c(res, m)
+  res$TE.tau <- TE.tau
+  res$pscale <- pscale
+  res$call <- match.call()
+  if (method %in% c("MH", "Peto", "GLMM", "SSW")) {
+    ci.f <- ci(TE.fixed, seTE.fixed, level = level.comb)
+    res$TE.fixed <- TE.fixed
+    res$seTE.fixed <- seTE.fixed
+    res$w.fixed <- w.fixed
+    res$lower.fixed <- ci.f$lower
+    res$upper.fixed <- ci.f$upper
+    res$statistic.fixed <- ci.f$statistic
+    res$pval.fixed <- ci.f$p
+    res$zval.fixed <- ci.f$statistic
+  }
+  if (is.glmm) {
+    if (sum(!exclude) > 1 & !zero.all) 
+      glmm.random <- rma.glmm(ai = event.e[!exclude], 
+                              n1i = n.e[!exclude], ci = event.c[!exclude], 
+                              n2i = n.c[!exclude], method = method.tau, test = ifelse(hakn, 
+                                                                                      "t", "z"), level = 100 * level.comb, measure = "OR", 
+                              model = model.glmm, control = control, ...)
+    else {
+      glmm.random <- glmm.fixed
+    }
+    TE.random <- as.numeric(glmm.random$b)
+    seTE.random <- as.numeric(glmm.random$se)
+    ci.r <- ci(TE.random, seTE.random, level = level.comb, 
+               df = if (hakn) 
+                 k - 1)
+    res$w.random <- rep(NA, length(event.e))
+    res$TE.random <- TE.random
+    res$seTE.random <- seTE.random
+    res$lower.random <- ci.r$lower
+    res$upper.random <- ci.r$upper
+    res$statistic.random <- ci.r$statistic
+    res$pval.random <- ci.r$p
+    res$zval.random <- ci.r$statistic
+    if (k >= 3) {
+      tau2.calc <- if (is.na(glmm.random$tau2)) 
+        0
+      else glmm.random$tau2
+      seTE.predict <- sqrt(seTE.random^2 + tau2.calc)
+      ci.p <- ci(TE.random, seTE.predict, level.predict, 
+                 k - 2)
+      res$seTE.predict <- seTE.predict
+      res$lower.predict <- ci.p$lower
+      res$upper.predict <- ci.p$upper
+    }
+    else {
+      res$seTE.predict <- NA
+      res$lower.predict <- NA
+      res$upper.predict <- NA
+    }
+    res$model.glmm <- model.glmm
+    res$Q <- glmm.random$QE.Wld
+    res$df.Q <- glmm.random$QE.df
+    res$pval.Q <- pvalQ(res$Q, res$df.Q)
+    res$Q.LRT <- glmm.random$QE.LRT
+    res$df.Q.LRT <- res$df.Q
+    res$pval.Q.LRT <- pvalQ(res$Q.LRT, res$df.Q.LRT)
+    if (k > 1) {
+      res$tau <- sqrt(glmm.random$tau2)
+      res$tau2 <- glmm.random$tau2
+      res$se.tau2 <- glmm.random$se.tau2
+    }
+    else res$se.tau2 <- NA
+    res$lower.tau2 <- NA
+    res$upper.tau2 <- NA
+    res$lower.tau <- NA
+    res$upper.tau <- NA
+    res$method.tau.ci <- ""
+    res$sign.lower.tau <- ""
+    res$sign.upper.tau <- ""
+    H <- calcH(res$Q, res$df.Q, level.comb)
+    res$H <- H$TE
+    res$lower.H <- H$lower
+    res$upper.H <- H$upper
+    I2 <- isquared(res$Q, res$df.Q, level.comb)
+    res$I2 <- I2$TE
+    res$lower.I2 <- I2$lower
+    res$upper.I2 <- I2$upper
+    res$Rb <- NA
+    res$lower.Rb <- NA
+    res$upper.Rb <- NA
+    res$.glmm.fixed <- glmm.fixed
+    res$.glmm.random <- glmm.random
+    res$version.metafor <- packageDescription("metafor")$Version
+    if (by) {
+      n.by <- length(unique(byvar[!exclude]))
+      if (n.by > 1) 
+        byvar.glmm <- factor(byvar[!exclude], bylevs(byvar[!exclude]))
+      glmm.random.by <- try(suppressWarnings(rma.glmm(ai = event.e[!exclude], 
+                                                      n1i = n.e[!exclude], ci = event.c[!exclude], 
+                                                      n2i = n.c[!exclude], mods = if (n.by > 1) 
+                                                        ~byvar.glmm
+                                                      else NULL, method = method.tau, test = ifelse(hakn, 
+                                                                                                    "t", "z"), level = 100 * level.comb, measure = "OR", 
+                                                      model = model.glmm, control = control, ...)), 
+                            silent = TRUE)
+      if ("try-error" %in% class(glmm.random.by)) 
+        if (grepl(paste0("Number of parameters to be estimated is ", 
+                         "larger than the number of observations"), 
+                  glmm.random.by)) {
+          glmm.random.by <- suppressWarnings(rma.glmm(ai = event.e[!exclude], 
+                                                      n1i = n.e[!exclude], ci = event.c[!exclude], 
+                                                      n2i = n.c[!exclude], mods = if (n.by > 1) 
+                                                        ~byvar.glmm
+                                                      else NULL, method = "FE", test = ifelse(hakn, 
+                                                                                              "t", "z"), level = 100 * level.comb, measure = "OR", 
+                                                      model = model.glmm, control = control, ...))
+        }
+      else stop(glmm.random.by)
+      Q.r <- glmm.random.by$QE.Wld
+      df.Q.r <- glmm.random.by$k - glmm.random.by$p
+      H.r <- calcH(Q.r, df.Q.r, level.comb)
+      I2.r <- isquared(Q.r, df.Q.r, level.comb)
+      hcc <- list(tau2.resid = glmm.random.by$tau2, lower.tau2.resid = NA, 
+                  upper.tau2.resid = NA, tau.resid = sqrt(glmm.random.by$tau2), 
+                  lower.tau.resid = NA, upper.tau.resid = NA, 
+                  sign.lower.tau.resid = "", sign.upper.tau.resid = "", 
+                  Q.resid = NA, df.Q.resid = NA, pval.Q.resid = NA, 
+                  H.resid = H.r$TE, lower.H.resid = H.r$lower, 
+                  upper.H.resid = H.r$upper, I2.resid = I2.r$TE, 
+                  lower.I2.resid = I2.r$lower, upper.I2.resid = I2.r$upper)
+    }
+  }
+  else if (method == "SSW") {
+    if (hakn) 
+      ci.r <- ci(TE.random, seTE.random, level = level.comb, 
+                 df = m$k - 1)
+    else ci.r <- ci(TE.random, seTE.random, level = level.comb)
+    res$TE.random <- TE.random
+    res$seTE.random <- seTE.random
+    res$w.random <- w.random
+    res$lower.random <- ci.r$lower
+    res$upper.random <- ci.r$upper
+    res$statistic.random <- ci.r$statistic
+    res$pval.random <- ci.r$p
+    res$zval.random <- ci.r$statistic
+  }
+  if (keepdata) {
+    res$data <- data
+    if (!missing.subset) 
+      res$subset <- subset
+  }
+  class(res) <- c(fun, "meta")
+  if (by) {
+    res$byvar <- byvar
+    res$bylab <- bylab
+    res$print.byvar <- print.byvar
+    res$byseparator <- byseparator
+    res$tau.common <- tau.common
+    if (!tau.common) 
+      res <- c(res, subgroup(res))
+    else if (!is.null(tau.preset)) 
+      res <- c(res, subgroup(res, tau.preset))
+    else {
+      if (is.glmm) 
+        res <- c(res, subgroup(res, NULL, factor(res$byvar, 
+                                                 bylevs(res$byvar)), ...))
+      else res <- c(res, subgroup(res, hcc$tau.resid))
+    }
+    if (!tau.common || !is.null(tau.preset)) {
+      res$tau2.resid <- res$lower.tau2.resid <- res$upper.tau2.resid <- NA
+      res$tau.resid <- res$lower.tau.resid <- res$upper.tau.resid <- NA
+      res$Q.resid <- res$df.Q.resid <- res$pval.Q.resid <- NA
+      res$H.resid <- res$lower.H.resid <- res$upper.H.resid <- NA
+      res$I2.resid <- res$lower.I2.resid <- res$upper.I2.resid <- NA
+    }
+    else {
+      res$tau2.resid <- hcc$tau2.resid
+      res$lower.tau2.resid <- hcc$lower.tau2.resid
+      res$upper.tau2.resid <- hcc$upper.tau2.resid
+      res$tau.resid <- hcc$tau.resid
+      res$lower.tau.resid <- hcc$lower.tau.resid
+      res$upper.tau.resid <- hcc$upper.tau.resid
+      res$sign.lower.tau.resid <- hcc$sign.lower.tau.resid
+      res$sign.upper.tau.resid <- hcc$sign.upper.tau.resid
+      res$Q.w.random <- hcc$Q.resid
+      res$df.Q.w.random <- hcc$df.Q.resid
+      res$pval.Q.w.random <- hcc$pval.Q.resid
+      res$H.resid <- hcc$H.resid
+      res$lower.H.resid <- hcc$lower.H.resid
+      res$upper.H.resid <- hcc$upper.H.resid
+      res$I2.resid <- hcc$I2.resid
+      res$lower.I2.resid <- hcc$lower.I2.resid
+      res$upper.I2.resid <- hcc$upper.I2.resid
+    }
+    res$event.w <- NULL
+    res$n.w <- NULL
+    res$time.e.w <- NULL
+    res$time.c.w <- NULL
+  }
+  class(res) <- c(fun, "meta")
+  
+  res
+}
